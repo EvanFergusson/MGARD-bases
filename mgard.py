@@ -6,15 +6,26 @@ import matplotlib.pyplot as plt
 def Gramm_matrix(grid, order=1):
 	''' Gramm matrix for piecewise polynomial of given order on a given grid '''
 
+	dgrid = np.diff(grid)
 	if order==1:
-		dgrid = np.diff(grid)
 		main_diag = np.concatenate((dgrid[0:1]/3,(dgrid[:-1]+dgrid[1:])/3,dgrid[-1:]/3))
 		return np.diag(dgrid/6,-1) + np.diag(main_diag) + np.diag(dgrid/6,1)
+	elif order==2:
+		dx = dgrid[0]
+		N = grid.size
+		main_diag = 8/15*dx*np.ones((N,))
+		main_diag[1::2] *= 2
+		main_diag[0] /= 2
+		main_diag[-1] /= 2
+		sup_diag = 2/15*dx*np.ones((N-1,))
+		supsup_diag = np.zeros((N-2,))
+		supsup_diag[1::2] -= dx/15
+		return np.diag(supsup_diag,-2) + np.diag(sup_diag,-1) + np.diag(main_diag) + np.diag(sup_diag,1) + np.diag(supsup_diag,2)
 
 
 
 class MGARD(object):
-	def __init__(self, grid, u, order=1, interp='mid'):
+	def __init__(self, grid, u, order=1, interp='left'):
 		self.grid   = grid
 		self.u      = u
 		self.u_mg   = u.copy()
@@ -31,16 +42,22 @@ class MGARD(object):
 		  dind:	indices of the surplus nodes
 		  u0:	values at the coarse nodes
 		'''
-		dgrid = np.diff(grid[ind0])
 
 		if self.order==1:
+			dgrid = np.diff(self.grid[ind0])
 			# interpolation matrix
 			P = np.zeros((len(dind),len(ind0)))
 			# left dof
-			P[:,:-1] = np.diag((grid[ind0][1:]-grid[dind])/dgrid)
+			P[:,:-1] = np.diag((self.grid[ind0][1:]-self.grid[dind])/dgrid)
 			# right dof
-			P += np.diag((grid[dind]-grid[ind0][:-1])/dgrid,1)[:-1,:]
+			P += np.diag((self.grid[dind]-self.grid[ind0][:-1])/dgrid,1)[:-1,:]
 			return P @ u0
+		elif self.order==2:
+			res = np.zeros((len(dind),))
+			P = np.array([[3,6,-1],[-1,6,3]]) / 8
+			for i in range(0,len(dind),2):
+				res[i:i+2] = P @ u0[i:i+3]
+			return res
 		elif self.order==0:
 			# left dof (cadlag)
 			# P[:,:-1] = np.eye(len(dind))
@@ -79,6 +96,18 @@ class MGARD(object):
 			f[0]    =                     ar[0]  * ud[0]
 			f[1:-1] = al[:-1] * ud[:-1] + ar[1:] * ud[1:]
 			f[-1]   = al[-1]  * ud[-1]
+			return np.linalg.solve(G,f)
+		elif self.order==2:
+			G = Gramm_matrix(self.grid[ind0], self.order)
+			#
+			dx = np.diff(self.grid[ind0])[0]
+			#
+			# f[1] = 7/15*dx * (ud[0]+ud[1])
+			# f[2] = -1/6*ud[0] - 4/15*dx*ud[1] - 4/15*dx*ud[2] - -1/6*ud[3]
+			f[0]      =  4/15 * dx * ud[0] - 1/15 * dx * ud[1]
+			f[1::2]   =  7/15 * dx * (ud[::2]+ud[1::2])
+			f[2:-1:2] = dx/15 * ( -ud[:-3:2] + 4*ud[1:-2:2] + 4*ud[2:-1:2] - ud[3::2])
+			f[-1]     =  -1/15 * dx * ud[-2] + 4/15 * dx * ud[-1]
 			return np.linalg.solve(G,f)
 		elif self.order==0:
 			# contribution from dof to the left
@@ -156,7 +185,8 @@ class MGARD(object):
 		'''
 		self.grids = []
 		ind0 = np.arange(self.grid.size)
-		while len(ind0)>2:
+		min_grid = 3 if self.order==2 else 2
+		while len(ind0)>min_grid:
 			dind = ind0[1::2]
 			ind0 = ind0[0::2]
 			self.grids.append([ind0,dind])
@@ -353,8 +383,8 @@ if __name__ == '__main__':
 
 
 	# N = 2**3 + 1
-	# N = 2**5 + 1
-	N = 2**10 + 1
+	N = 2**5 + 1
+	# N = 2**10 + 1
 
 
 	grid = np.linspace(0,1,N)
@@ -362,6 +392,9 @@ if __name__ == '__main__':
 	# dind = slice(1,N,2)
 	ind0 = np.arange(0,N,2)
 	dind = np.arange(1,N,2)
+
+	print(Gramm_matrix(grid, order=2))
+	exit()
 
 	edges  = [grid[0]] + list(0.5*(grid[:-1]+grid[1:])) + [grid[-1]]
 	edges0 = [grid[ind0][0]] + list(0.5*(grid[ind0][:-1]+grid[ind0][1:])) + [grid[ind0][-1]]
