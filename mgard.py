@@ -5,13 +5,42 @@ import matplotlib.pyplot as plt
 
 def Gramm_matrix(grid, order=1):
 	''' Gramm matrix for piecewise polynomial of given order on a given grid '''
-
+	dgrid = np.diff(grid)
 	if order==1:
-		dgrid = np.diff(grid)
 		main_diag = np.concatenate((dgrid[0:1]/3,(dgrid[:-1]+dgrid[1:])/3,dgrid[-1:]/3))
 		return np.diag(dgrid/6,-1) + np.diag(main_diag) + np.diag(dgrid/6,1)
-
-
+	elif order==2:
+		main_diag = np.zeros(n)
+		main_diag[0] = (dgrid[1]+dgrid[2])*(6*(dgrid[1])**2-3*dgrid[1]*dgrid[2]+dgrid[2]**2)/(30*(dgrid[1])**2)
+		main_diag[1] = (dgrid[1]+dgrid[2])*(6*(dgrid[1])**2-3*dgrid[1]*dgrid[2]+dgrid[2]**2)/(30*(dgrid[1])**2)
+		main_diag[n-1] = (dgrid[n-2]+dgrid[n-3])*(dgrid[n-3]**2-3*dgrid[n-3]*dgrid[n-2]+6*(dgrid[n-2])**2)/(30*(dgrid[n-2])**2)
+		main_diag[n-2] = (dgrid[n-3]+dgrid[n-4])*(dgrid[n-4]**2-3*dgrid[n-4]*dgrid[n-3]+6*(dgrid[n-3])**2)/(30*(dgrid[n-3])**2)
+		for i in range(2,n-2):
+			if i%2==0:
+				main_diag[i] = (dgrid[i]+dgrid[i+1])*(6*(dgrid[i])**2-3*dgrid[i]*dgrid[i+1]+dgrid[i+1]**2)/(30*(dgrid[i])**2) + (dgrid[i-1]+dgrid[i-2])*(dgrid[i-2]**2-3*dgrid[i-2]*dgrid[i-1]+6*(dgrid[i-1])**2)/(30*(dgrid[i-1])**2)
+			elif i%2==1:
+				main_diag[i] = (dgrid[i]+dgrid[i-1])/(30*(dgrid[i-1]**2)*(dgrid[i]**2))
+		diag_neg1 = np.zeros(n-1)
+		for i in range(1,n):
+			if i%2==0:
+				diag_neg1[i-1] = (dgrid[i-2]**3)*(3*(dgrid[i-1])-2*(dgrid[i-2]))/(60*(dgrid[i-1]**2)*(dgrid[i-2]))
+			elif i%2==1:
+				diag_neg1[i-1] = ((dgrid[i]+dgrid[i-1])**3)*(3*(dgrid[i-1])-2*dgrid[i])/(60*((dgrid[i-1])**2))*(dgrid[i])
+		diag_pos1 = np.zeros(n-1)
+		for i in range(0,n-1):
+			if i%2==0:
+				diag_pos1[i] = ((dgrid[i+1]+dgrid[i])**3)*(3*(dgrid[i])-2*dgrid[i+1])/(60*(dgrid[i]**2)*(dgrid[i+1]))
+			elif i%2==1:
+				diag_pos1[i] = ((dgrid[i]+dgrid[i-1])**3)*(3*dgrid[i]-2*dgrid[i-1])/(60*(dgrid[i]**2)*(dgrid[i-1]))
+		diag_neg2 = np.zeros(n-2)
+		for i in range(2,n):
+			if i%2==0:
+				diag_neg2[i-2] = -(dgrid[i-1]+dgrid[i-2])*(3*((dgrid[i-2])**2)-4*dgrid[i-2]*dgrid[i-1]+(dgrid[i-1]**2))/(60*dgrid[i-2]*dgrid[i-1])
+		diag_pos2 = np.zeros(n-2)
+		for i in range(0,n-2):
+			if i%2==0:
+				diag_pos2[i] = -((dgrid[i+1]-dgrid[i])**3)*(3*(dgrid[i]**2)-4*dgrid[i]*dgrid[i+1]+dgrid[i+1]**2)/(60*dgrid[i]*dgrid[i+1])
+		return np.diag(diag_neg1,-1) + np.diag(main_diag) + np.diag(diag_pos1,1) + np.diag(diag_pos2,2)
 
 class MGARD(object):
 	def __init__(self, grid, u, order=1, interp='mid'):
