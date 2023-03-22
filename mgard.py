@@ -37,6 +37,8 @@ class MGARD(object):
 		self.order  = order
 		self.interp = interp
 
+		self.ndim = u.ndim
+
 		if interp!='left':
 			raise ValueError("Avoid mid iterpolation at the moment")
 
@@ -93,13 +95,14 @@ class MGARD(object):
 			res = np.zeros(n_dind,)
 
 			# loop through quadratic elements
-			for i in range(0,n_dind,2):
+			for i in range(0,n_dind,self.order):
 				# mesh steps
 				h01 = (self.grid[ind0[i+0]] - self.grid[ind0[i+1]])
 				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
+				#
 				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
 				# one point per interval of the element
-				for j in range(2):
+				for j in range(self.order):
 					# Lagrange basis functions
 					l0 =  (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) / (h01 * h02)
 					l1 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) / (h01 * h12)
@@ -116,16 +119,18 @@ class MGARD(object):
 			res = np.zeros(n_dind,)
 
 			# loop through cubic elements
-			for i in range(0,n_dind,3):
+			for i in range(0,n_dind,self.order):
 				# mesh steps
 				h01 = (self.grid[ind0[i+0]] - self.grid[ind0[i+1]])
 				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
 				h03 = (self.grid[ind0[i+0]] - self.grid[ind0[i+3]])
+				#
 				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
 				h13 = (self.grid[ind0[i+1]] - self.grid[ind0[i+3]])
+				#
 				h23 = (self.grid[ind0[i+2]] - self.grid[ind0[i+3]])
 				# one point per interval of the element
-				for j in range(3):
+				for j in range(self.order):
 					# Lagrange basis functions
 					l0 =  (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h01 * h02 * h03)
 					l1 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h01 * h12 * h13)
@@ -134,6 +139,37 @@ class MGARD(object):
 
 					# interpolant
 					res[i+j] = u0[i]*l0 + u0[i+1]*l1 + u0[i+2]*l2 + u0[i+3]*l3
+			return res
+		elif self.order==4:
+			res = np.zeros(n_dind,)
+
+			# loop through cubic elements
+			for i in range(0,n_dind,self.order):
+				# mesh steps
+				h01 = (self.grid[ind0[i+0]] - self.grid[ind0[i+1]])
+				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
+				h03 = (self.grid[ind0[i+0]] - self.grid[ind0[i+3]])
+				h04 = (self.grid[ind0[i+0]] - self.grid[ind0[i+4]])
+				#
+				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
+				h13 = (self.grid[ind0[i+1]] - self.grid[ind0[i+3]])
+				h14 = (self.grid[ind0[i+1]] - self.grid[ind0[i+4]])
+				#
+				h23 = (self.grid[ind0[i+2]] - self.grid[ind0[i+3]])
+				h24 = (self.grid[ind0[i+2]] - self.grid[ind0[i+4]])
+				#
+				h34 = (self.grid[ind0[i+3]] - self.grid[ind0[i+4]])
+				# one point per interval of the element
+				for j in range(self.order):
+					# Lagrange basis functions
+					l0 =  (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+4]]) / (h01 * h02 * h03 * h04)
+					l1 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+4]]) / (h01 * h12 * h13 * h14)
+					l2 =  (self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+4]]) / (h02 * h12 * h23 * h24)
+					l3 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+4]]) / (h03 * h13 * h23 * h34)
+					l4 =  (self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h04 * h14 * h24 * h34)
+
+					# interpolant
+					res[i+j] = u0[i]*l0 + u0[i+1]*l1 + u0[i+2]*l2 + u0[i+3]*l3 + u0[i+4]*l4
 			return res
 
 
