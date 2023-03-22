@@ -23,6 +23,11 @@ def Gramm_matrix(grid, order=1):
 		return np.diag(supsup_diag,-2) + np.diag(sup_diag,-1) + np.diag(main_diag) + np.diag(sup_diag,1) + np.diag(supsup_diag,2)
 
 
+def interpolation_matrix(grid, order):
+	'''Interpolation matrix for piecewise polynomial of given order on a given grid '''
+	pass
+
+
 
 class MGARD(object):
 	def __init__(self, grid, u, order=1, interp='left'):
@@ -31,6 +36,9 @@ class MGARD(object):
 		self.u_mg   = u.copy()
 		self.order  = order
 		self.interp = interp
+
+		if interp!='left':
+			raise ValueError("Avoid mid iterpolation at the moment")
 
 
 	def interpolate(self, ind0, dind, u0):
@@ -43,33 +51,90 @@ class MGARD(object):
 		  u0:	values at the coarse nodes
 		'''
 
-		if self.order==1:
-			dgrid = np.diff(self.grid[ind0])
-			# interpolation matrix
-			P = np.zeros((len(dind),len(ind0)))
-			# left dof
-			P[:,:-1] = np.diag((self.grid[ind0][1:]-self.grid[dind])/dgrid)
-			# right dof
-			P += np.diag((self.grid[dind]-self.grid[ind0][:-1])/dgrid,1)[:-1,:]
-			return P @ u0
-		elif self.order==2:
-			res = np.zeros((len(dind),))
-			P = np.array([[3,6,-1],[-1,6,3]]) / 8
-			for i in range(0,len(dind),2):
-				res[i:i+2] = P @ u0[i:i+3]
-			return res
-		elif self.order==0:
+		n_dind = len(dind)
+
+		if self.order==0:
+			return u0[:-1]
 			# left dof (cadlag)
 			# P[:,:-1] = np.eye(len(dind))
 			# P[:,1:] = np.eye(len(dind))
 
-			if self.interp=='mid':
-				return 0.5*(u0[:-1]+u0[1:])
-			else:
-				return u0[:-1]
+			# if self.interp=='mid':
+			# 	return 0.5*(u0[:-1]+u0[1:])
+			# else:
+			# 	return u0[:-1]
 			# return u0[1:]
 			# alpha = 0.3
 			# return alpha*u0[:-1] + (1-alpha)*u0[1:]
+		elif self.order==1:
+			res = np.zeros(n_dind,)
+
+			# loop through linear elements
+			for i in range(n_dind):
+				# mesh step
+				h = (self.grid[ind0[i+1]] - self.grid[ind0[i]])
+
+				# Lagrange basis functions
+				l0 = -(self.grid[dind[i]] - self.grid[ind0[i+1]]) / h
+				l1 =  (self.grid[dind[i]] - self.grid[ind0[i+0]]) / h
+
+				# interpolant
+				res[i] = u0[i] * l0 + u0[i+1] * l1
+			return res
+			# dgrid = np.diff(self.grid[ind0])
+			# # interpolation matrix
+			# P = np.zeros((len(dind),len(ind0)))
+			# # left dof
+			# P[:,:-1] = np.diag((self.grid[ind0][1:]-self.grid[dind])/dgrid)
+			# # right dof
+			# P += np.diag((self.grid[dind]-self.grid[ind0][:-1])/dgrid,1)[:-1,:]
+			# return P @ u0
+		elif self.order==2:
+			res = np.zeros(n_dind,)
+
+			# loop through quadratic elements
+			for i in range(0,n_dind,2):
+				# mesh steps
+				h01 = (self.grid[ind0[i+0]] - self.grid[ind0[i+1]])
+				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
+				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
+				# one point per interval of the element
+				for j in range(2):
+					# Lagrange basis functions
+					l0 =  (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) / (h01 * h02)
+					l1 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) / (h01 * h12)
+					l2 =  (self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) / (h02 * h12)
+
+					# interpolant
+					res[i+j] = u0[i]*l0 + u0[i+1]*l1 + u0[i+2]*l2
+			return res
+			# P = np.array([[3,6,-1],[-1,6,3]]) / 8
+			# for i in range(0,len(dind),2):
+			# 	res[i:i+2] = P @ u0[i:i+3]
+			# return res
+		elif self.order==3:
+			res = np.zeros(n_dind,)
+
+			# loop through cubic elements
+			for i in range(0,n_dind,3):
+				# mesh steps
+				h01 = (self.grid[ind0[i+0]] - self.grid[ind0[i+1]])
+				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
+				h03 = (self.grid[ind0[i+0]] - self.grid[ind0[i+3]])
+				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
+				h13 = (self.grid[ind0[i+1]] - self.grid[ind0[i+3]])
+				h23 = (self.grid[ind0[i+2]] - self.grid[ind0[i+3]])
+				# one point per interval of the element
+				for j in range(3):
+					# Lagrange basis functions
+					l0 =  (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h01 * h02 * h03)
+					l1 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h01 * h12 * h13)
+					l2 =  (self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+3]]) / (h02 * h12 * h23)
+					l3 = -(self.grid[dind[i+j]] - self.grid[ind0[i+0]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+1]]) * (self.grid[dind[i+j]] - self.grid[ind0[i+2]]) / (h03 * h13 * h23)
+
+					# interpolant
+					res[i+j] = u0[i]*l0 + u0[i+1]*l1 + u0[i+2]*l2 + u0[i+3]*l3
+			return res
 
 
 	def project(self, ind0, dind, ud):
@@ -191,6 +256,7 @@ class MGARD(object):
 			ind0 = ind0[0::2]
 			self.grids.append([ind0,dind])
 		return self.grids
+
 
 	def decompose_full(self):
 		self.decompose_grid()
