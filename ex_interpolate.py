@@ -10,9 +10,7 @@ from mgard import MGARD
 #####################################################
 # grid
 
-N = 6 * 2**1 + 1
-# N = 2**5 + 1
-# N = 2**10 + 1
+N = 6 * 2**6 + 1
 
 grid = np.linspace(0,1,N)
 ind0 = np.arange(0,N,2)
@@ -55,7 +53,7 @@ u3[dind] = mg3.interpolate(ind0, dind, u[ind0])
 
 plt.subplot(121)
 plt.plot(grid, u,  label='u')
-# plt.plot(u0, label='u0')
+plt.step(grid, u0, label='u0')
 plt.plot(grid, u1, label='u1')
 plt.plot(grid, u2, label='u2')
 plt.plot(grid, u3, label='u3')
@@ -65,6 +63,7 @@ plt.legend()
 
 plt.subplot(122)
 plt.semilogy(grid[dind], np.abs(u-u)[1::2])
+plt.semilogy(grid[dind], np.abs(u0-u)[1::2])
 plt.semilogy(grid[dind], np.abs(u1-u)[1::2])
 plt.semilogy(grid[dind], np.abs(u2-u)[1::2])
 plt.semilogy(grid[dind], np.abs(u3-u)[1::2])
