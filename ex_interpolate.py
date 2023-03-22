@@ -10,7 +10,7 @@ from mgard import MGARD
 #####################################################
 # grid
 
-N = 2**4 + 1
+N = 6 * 2**1 + 1
 # N = 2**5 + 1
 # N = 2**10 + 1
 
@@ -37,6 +37,7 @@ u = np.sin(np.arange(N)/N*2*np.pi)
 mg0 = MGARD(grid, u, order=0)
 mg1 = MGARD(grid, u, order=1)
 mg2 = MGARD(grid, u, order=2)
+mg3 = MGARD(grid, u, order=3)
 
 
 u0 = u.copy()
@@ -48,11 +49,26 @@ u1[dind] = mg1.interpolate(ind0, dind, u[ind0])
 u2 = u.copy()
 u2[dind] = mg2.interpolate(ind0, dind, u[ind0])
 
+u3 = u.copy()
+u3[dind] = mg3.interpolate(ind0, dind, u[ind0])
 
-plt.plot(u,  label='u')
+
+plt.subplot(121)
+plt.plot(grid, u,  label='u')
 # plt.plot(u0, label='u0')
-plt.plot(u1, label='u1')
-plt.plot(u2, label='u2')
-
+plt.plot(grid, u1, label='u1')
+plt.plot(grid, u2, label='u2')
+plt.plot(grid, u3, label='u3')
+plt.gca().set_box_aspect(1)
+plt.gca().title.set_text('Interpolants')
 plt.legend()
+
+plt.subplot(122)
+plt.semilogy(grid[dind], np.abs(u-u)[1::2])
+plt.semilogy(grid[dind], np.abs(u1-u)[1::2])
+plt.semilogy(grid[dind], np.abs(u2-u)[1::2])
+plt.semilogy(grid[dind], np.abs(u3-u)[1::2])
+plt.gca().set_box_aspect(1)
+plt.gca().title.set_text('Errors')
+
 plt.show()
