@@ -1,0 +1,126 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.sparse import csr_matrix
+
+class MGARD(object):
+	def __init__(self, grid, u, order=1, interp='left'):
+		self.grid   = grid
+		self.u      = u
+		self.u_mg   = u.copy()
+		self.order  = order
+		self.interp = interp
+
+		self.ndim = u.ndim
+
+		if interp!='left':
+			raise ValueError("Avoid mid iterpolation at the moment")
+
+
+	def interpolate(self, ind0, dind1, dind2, u0, N):
+		'''Interpolate values from coarse grid to surplus grid
+		Inputs
+		------
+		  ind0:	indices of the coarse  nodes
+		  dind:	indices of the surplus nodes
+		  u0:	values at the coarse nodes
+		'''
+
+		if self.order==0:
+			return u0[:-1]
+		elif self.order==1:
+			row_grid,col_grid = grid #Need to fix indexing here
+			row_ind0,col_ind0 = ind0
+			row_dind1,col_dind1 = dind1
+			row_dind2,col_dind2 = dind2
+
+			m1 = row_dind1.size
+			n1 = col_dind1.size
+			m2 = row_dind2.size
+			n2 = col_dind2.size
+			mres = len(row_grid[0])
+			nres = len(col_grid)
+
+			res1 = np.zeros((m1,n1))
+			res1_flat = np.zeros(res1.size)
+			row_dind1_flat = np.zeros(res1.size)
+			col_dind1_flat = np.zeros(res1.size)
+
+			k = 0
+			for i in range(0,m1):
+				for j in range(0,n1):
+					i_ind0 = row_ind0[i,0]
+					j_ind0 = col_ind0[0,j]
+					j_dind1 = col_dind1[0,j]
+					i_dind1 = row_dind1[i,0]
+					jone_ind0 = col_ind0[0,j+1]
+					h = (col_grid[0,jone_ind0] - col_grid[0,j_ind0])
+					l0 = -(col_grid[0,j_dind1] - col_grid[0,jone_ind0]) / h
+					l1 =  (col_grid[0,j_dind1] - col_grid[0,j_ind0]) / h
+					res1[i,j] = u0[0,i_ind0,j_ind0] * l0 + u0[0,i_ind0,jone_ind0] * l1
+					res1_flat[k] = res1[i,j]
+					row_dind1_flat[k] = i_dind1
+					col_dind1_flat[k] = j_dind1
+					k = k+1
+			print(res1)
+			print(res1_flat)
+					
+
+			res2 = np.zeros((m2,n2))
+			res2_flat = np.zeros(res2.size)
+			row_dind2_flat = np.zeros(res2.size)
+			col_dind2_flat = np.zeros(res2.size)
+		
+			k=0
+			for i in range(0,m2):
+				for j in range(0,n2):
+					i_dind2 = row_dind2[i,0]
+					j_dind2 = col_dind2[0,j]
+					h = (row_grid[i_dind2+1,0] - row_grid[i_dind2-1,0])
+					l0 = -(row_grid[i_dind2,0] - row_grid[i_dind2+1,0]) / h
+					l1 =  (row_grid[i_dind2,0] - row_grid[i_dind2-1,0]) / h
+					res2[i,j] = u0[0,i_dind2-1,j_dind2] * l0 + u0[0,i_dind2+1,j_dind2] * l1
+					res2_flat[k] = res2[i,j]
+					row_dind2_flat[k] = i_dind2
+					col_dind2_flat[k] = j_dind2
+					k = k+1
+			print(res2)
+			print(res2_flat)
+
+			row_dind = [row_dind1_flat,row_dind2_flat]
+			col_dind = [col_dind1_flat,col_dind2_flat]
+			res_dind = [res1_flat,res2_flat]
+			dind = [row_dind,col_dind,res_dind]
+			print(dind)
+			return dind
+
+
+N = 5
+
+grid = np.ogrid[0:1:N*1j,0:1:N*1j]
+row_grid,col_grid = grid
+print(grid)
+ind0 = np.ogrid[0:N:2,0:N:2]
+row_ind0,col_ind0 = ind0
+print(ind0)
+
+dind1 = np.ogrid[0:N:2,1:N:2]
+dind2 = np.ogrid[1:N:2,0:N]
+print(dind1)
+print(dind2)
+
+u = np.sin(row_grid*col_grid[:, np.newaxis]/N*2*np.pi)
+print(u)
+
+mg1 = MGARD(grid, u, order=1)
+u1 = u.copy()
+u1 = mg1.interpolate(ind0, dind1, dind2, u, 5)
+
+
+#print(grid[1])
+#print(len(x_dind2[0]))
+
+
+#plt.contourf(x, y, u, cmap = 'jet')
+  
+#plt.colorbar()
+#plt.show()
