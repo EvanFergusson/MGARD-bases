@@ -43,6 +43,36 @@ class MGARD(object):
 			raise ValueError("Avoid mid iterpolation at the moment")
 
 
+	def interpolate_nd(self, ind0, dind, u0, dim):
+		'''Interpolate values from coarse grid to surplus grid
+
+		Inputs
+		------
+		  ind0:	indices of the coarse  nodes in each dimension
+		  dind:	indices of the surplus nodes in each dimension
+		  u0:	values at the coarse nodes
+		'''
+
+		for d in range(self.ndim):
+			n_dind = len(dind[d])
+
+			# loop through elements in the given dimension
+			for i in range(0,n_dind,self.order[d]):
+				# mesh step
+				h = (self.grid[ind0[d][i+1]] - self.grid[ind0[d][i]])
+
+				# Lagrange basis functions
+				l0 = -(self.grid[dind[d][i]] - self.grid[ind0[d][i+1]]) / h
+				l1 =  (self.grid[dind[d][i]] - self.grid[ind0[d][i+0]]) / h
+
+				ind1 = tuple([i0+di for i0,di in zip(ind0[:d],dind[:d])] + [i]   + [i0 for i0 in ind0[d+1:]])
+				ind2 = tuple([i0+di for i0,di in zip(ind0[:d],dind[:d])] + [i+1] + [i0 for i0 in ind0[d+1:]])
+
+				# interpolant
+				res[ind1] = u0[ind1]*l0 + u0[ind2]*l1
+
+
+
 	def interpolate(self, ind0, dind, u0):
 		'''Interpolate values from coarse grid to surplus grid
 
