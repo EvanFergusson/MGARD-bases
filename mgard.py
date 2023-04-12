@@ -43,7 +43,48 @@ class MGARD(object):
 			raise ValueError("Avoid mid iterpolation at the moment")
 
 
-	def interpolate_nd(self, ind0, dind, u0, dim):
+	def interpolate_nd(self, ind, ind0, dind):
+		'''Interpolate values from coarse grid to surplus grid in-place
+
+		Inputs
+		------
+		  ind:	indices of the fine    nodes in each dimension
+		  ind0:	indices of the coarse  nodes in each dimension
+		  dind:	indices of the surplus nodes in each dimension
+		'''
+
+		# loop through dimensions
+		for d in range(self.ndim):
+			# coarse and surplus indices along the given dimension
+			ind0_d = ind0[d]
+			dind_d = dind[d]
+
+			# 1d grid along the given dimension
+			grid_d = self.grid[d]
+
+			# loop through the 1d-elements along the given dimension
+			for i in range(0,len(dind_d),self.order[d]):
+				# mesh step
+				h = (grid_d[ind0_d[i+1]] - grid_d[ind0_d[i]])
+
+				# 1d Lagrange basis functions
+				l0 = -(grid_d[dind_d[i]] - grid_d[ind0_d[i+1]]) / h
+				l1 =  (grid_d[dind_d[i]] - grid_d[ind0_d[i+0]]) / h
+
+				i_f = [i0 for i0 in ind[:d]]
+				i_c = [i0 for i0 in ind0[d+1:]]
+
+				ind1 = np.ix_(*(i_f+[[ind0_d[i+0]]]+i_c))
+				ind2 = np.ix_(*(i_f+[[ind0_d[i+1]]]+i_c))
+				ind3 = np.ix_(*(i_f+[[dind_d[i+0]]]+i_c))
+
+				# interpolant
+				self.u[ind3] = self.u[ind1]*l0 + self.u[ind2]*l1
+		return self.u
+
+
+
+	def interpolate(self, ind0, dind, u0):
 		'''Interpolate values from coarse grid to surplus grid
 
 		Inputs
@@ -53,35 +94,11 @@ class MGARD(object):
 		  u0:	values at the coarse nodes
 		'''
 
-		for d in range(self.ndim):
-			n_dind = len(dind[d])
+		# if len(ind0)!=self.ndim:
+		# 	raise ValueError(f"list of indices ind0 must have indices for each out of {self.ndim} dimensions, got len(ind0) = {len(ind0)}")
+		# if len(dind)!=self.ndim:
+		# 	raise ValueError(f"list of indices dind must have indices for each out of {self.ndim} dimensions, got len(dind) = {len(dind)}")
 
-			# loop through elements in the given dimension
-			for i in range(0,n_dind,self.order[d]):
-				# mesh step
-				h = (self.grid[ind0[d][i+1]] - self.grid[ind0[d][i]])
-
-				# Lagrange basis functions
-				l0 = -(self.grid[dind[d][i]] - self.grid[ind0[d][i+1]]) / h
-				l1 =  (self.grid[dind[d][i]] - self.grid[ind0[d][i+0]]) / h
-
-				ind1 = tuple([i0+di for i0,di in zip(ind0[:d],dind[:d])] + [i]   + [i0 for i0 in ind0[d+1:]])
-				ind2 = tuple([i0+di for i0,di in zip(ind0[:d],dind[:d])] + [i+1] + [i0 for i0 in ind0[d+1:]])
-
-				# interpolant
-				res[ind1] = u0[ind1]*l0 + u0[ind2]*l1
-
-
-
-	def interpolate(self, ind0, dind, u0):
-		'''Interpolate values from coarse grid to surplus grid
-
-		Inputs
-		------
-		  ind0:	indices of the coarse  nodes
-		  dind:	indices of the surplus nodes
-		  u0:	values at the coarse nodes
-		'''
 
 		n_dind = len(dind)
 
@@ -113,6 +130,7 @@ class MGARD(object):
 				# interpolant
 				res[i] = u0[i] * l0 + u0[i+1] * l1
 			return res
+
 			# dgrid = np.diff(self.grid[ind0])
 			# # interpolation matrix
 			# P = np.zeros((len(dind),len(ind0)))
@@ -131,6 +149,7 @@ class MGARD(object):
 				h02 = (self.grid[ind0[i+0]] - self.grid[ind0[i+2]])
 				#
 				h12 = (self.grid[ind0[i+1]] - self.grid[ind0[i+2]])
+
 				# one point per interval of the element
 				for j in range(self.order):
 					# Lagrange basis functions
