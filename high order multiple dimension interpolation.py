@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 
-np.set_printoptions(threshold=sys.maxsize)
+np.set_printoptions(precision=18)
 
 class MGARD(object):
 	def __init__(self, grid, u, order=1, interp='left'):
@@ -54,7 +54,7 @@ class MGARD(object):
 						l_vector = np.zeros(self.order[d]+1)
 						for s in range(self.order[d]+1):
 							if s != r:
-								ls = grid_d[dind_d[i]] - grid_d[ind0_d[i+s]]
+								ls = grid_d[dind_d[i+j]] - grid_d[ind0_d[i+s]]
 								numer_vector = np.append(numer_vector, ls)
 						for h in h_dic:
 							if int(h[1])==r or int(h[2])==r:
@@ -77,21 +77,18 @@ class MGARD(object):
 
 					
 					self.u[interp_ind] = 0
-					p = 0
 					for (key,l) in zip(interp_dic,l_dic):
 						self.u[interp_ind] = self.u[interp_ind] + self.u[interp_dic[key]]*l_dic[l]
-						p = p + 1
 
-					
 
 		return self.u,
 
 
-N = 6*2**5 + 1
+N = 6*2**6 + 1
 
 dim = 2
 
-grid = [np.linspace(0,1,N) for _ in range(dim)]
+grid = [np.logspace(0,1,N) for _ in range(dim)]
 ind  = [np.arange(0,N)     for _ in range(dim)]
 ind0 = [np.arange(0,N,2)   for _ in range(dim)]
 dind = [np.arange(1,N,2)   for _ in range(dim)]
@@ -113,9 +110,9 @@ for d in range(1,dim):
 print(u)'''
 
 
-u = np.sin(np.arange(N)/N*2*np.pi)
+u = np.cos(np.arange(N)/N*2*np.pi)
 for d in range(1,dim):
-	v = np.sin(np.arange(N)/N*2*np.pi)
+	v = np.cos(np.arange(N)/N*2*np.pi)
 	u = u[...,np.newaxis] * v.reshape([1]*(d-1)+[len(v)])
 
 #print(u)
@@ -127,13 +124,11 @@ u1 = np.zeros_like(u)
 u1[np.ix_(*ind)] = u[np.ix_(*ind)]
 res_mg1 = mg1.interpolate_nd(ind, ind0, dind)
 
+#print(mg1.u[1::2])
 
-print(np.absolute(u1-mg1.u))
+mg_1 = np.absolute(u1[1::2]-mg1.u[1::2]).flatten()
 
-#print(u1-mg1.u)
-
-
-print((np.absolute(u1-mg1.u)[1]).sum())
+print((np.absolute(u1-mg1.u)).sum())
 
 #plt.subplot(121)
 #plt.imshow(u1, label='u')
@@ -143,22 +138,23 @@ print((np.absolute(u1-mg1.u)[1]).sum())
 
 
 mg2 = MGARD(grid, u, order=(2,2))
-u2 = np.zeros_like(u)
-u2[np.ix_(*ind)] = u[np.ix_(*ind)]
 res_mg2 = mg2.interpolate_nd(ind, ind0, dind)
-print((np.absolute(u2-mg2.u)[1]).sum())
+#print((np.absolute(u2-mg2.u)).sum())
+print((np.absolute(u1-mg2.u)).sum())
+mg_2 = np.absolute(u1[1::2]-mg2.u[1::2]).flatten()
+
+
+mg3 = MGARD(grid, u, order=(3,3))
+res_mg3 = mg3.interpolate_nd(ind, ind0, dind)
+print((np.absolute(u1-mg3.u)).sum())
+mg_3 = np.absolute(u1[1::2]-mg3.u[1::2]).flatten()
+
 
 mg4 = MGARD(grid, u, order=(4,4))
-u4 = np.zeros_like(u)
-u4[np.ix_(*ind)] = u[np.ix_(*ind)]
 res_mg4 = mg4.interpolate_nd(ind, ind0, dind)
-print((np.absolute(u4-mg4.u)[1]).sum())
+print((np.absolute(u1-mg4.u)).sum())
+mg_4 = np.absolute(u1[1::2]-mg4.u[1::2]).flatten()
 
-mg8 = MGARD(grid, u, order=(8,8))
-u8 = np.zeros_like(u)
-u8[np.ix_(*ind)] = u[np.ix_(*ind)]
-res_mg8 = mg8.interpolate_nd(ind, ind0, dind)
-print((np.absolute(u8-mg8.u)[1]).sum())
 
 '''plt.subplot(121)
 plt.plot(grid, u1,  label='u')
@@ -171,20 +167,30 @@ plt.gca().set_box_aspect(1)
 plt.gca().title.set_text('Interpolants')
 plt.legend()'''
 
-mg_1 = np.absolute(mg1.u-u1)[1]
-mg_2 = np.absolute(mg2.u-u2)[1]
-mg_4 = np.abs(mg4.u-u4)[1]
-mg_8 = np.abs(mg8.u-u4)[1]
+'''mg_1 = np.absolute(mg1.u-u1)[1]
+mg_2 = np.absolute(mg2.u-u1)[1]
+mg_3 = np.absolute(mg3.u-u1)[1]
+mg_4 = np.absolute(mg4.u-u1)[1]'''
 
-p = 60
+#plt.subplot(122)
+#plt.semilogy(np.arange(p), mg_1[0:p],label='u1')
+#plt.semilogy(np.arange(p), mg_2[0:p],label='u2')
+#plt.semilogy(np.arange(p), mg_4[0:p],label='u4')
+#plt.semilogy(np.arange(p), mg_8[0:p],label='u8')
+#plt.gca().set_box_aspect(1)
+#plt.gca().title.set_text('Errors (Sine)')
+#plt.legend()
+#plt.show()
+
+p = 150
 
 plt.subplot(122)
-plt.semilogy(np.arange(p), mg_1[0:p],label='u1')
+plt.semilogy(np.arange(p), mg_1[0:p], label='u1')
 plt.semilogy(np.arange(p), mg_2[0:p],label='u2')
+plt.semilogy(np.arange(p), mg_3[0:p],label='u3')
 plt.semilogy(np.arange(p), mg_4[0:p],label='u4')
-plt.semilogy(np.arange(p), mg_8[0:p],label='u8')
 plt.gca().set_box_aspect(1)
-plt.gca().title.set_text('Errors (Sine)')
+plt.gca().title.set_text('Errors (Cosine)')
 plt.legend()
 plt.show()
 
