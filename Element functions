@@ -1,0 +1,111 @@
+import numpy as np
+import itertools
+import sys
+
+np.set_printoptions(threshold=sys.maxsize)
+
+N = 2**3 + 1
+
+dim = 3
+
+grid = [np.logspace(0,1,N) for _ in range(dim)]
+ind  = [np.arange(0,N)     for _ in range(dim)]
+ind0 = [np.arange(0,N,2)   for _ in range(dim)]
+dind = [np.arange(1,N,2)   for _ in range(dim)]
+
+mini = [N for _ in range(dim)]
+
+
+class MGARD(object):
+	def __init__(self, grid, u, order=1, interp='left'):
+		self.grid   = grid
+		self.u      = u
+		self.u_mg   = u.copy()
+		self.order  = order
+		self.interp = interp
+
+		self.ndim = u.ndim
+
+		if interp!='left':
+			raise ValueError("Avoid mid iterpolation at the moment")
+		
+	def elem_min_nodes(self, ind0):
+		ind0_dic = {}
+		for d in range(self.ndim):
+			min_nodes = np.array([])
+			for i in range(0,len(ind0[d])-1,self.order[d]):
+				min_nodes = np.append(min_nodes,ind0[d][i])
+			ind0_dic["ind0_{0}".format(d)] = min_nodes
+
+		index = list(itertools.product(*ind0_dic.values()))
+		index = np.array(index)
+
+		return index
+
+	def elem_surp(self,ind0,ind,elem):
+		elem_dic = {}
+		coarse_dic = {}
+		for d in range(self.ndim):
+			elem_nodes = np.array([])
+			coarse_nodes = np.array([])
+			for i in range(int(elem[d]),int(elem[d])+2*self.order[d]+1):
+				elem_nodes = np.append(elem_nodes,ind[d][i])
+			for j in range(int(elem[d]/2),int(elem[d]/2)+self.order[d]+1):
+				coarse_nodes = np.append(coarse_nodes,ind0[d][j])
+			elem_dic["{0}".format(d)] = elem_nodes
+			coarse_dic["{0}".format(d)] = coarse_nodes
+
+		#coarse nodes of element
+		elem_coarse = list(itertools.product(*[coarse_dic[str(i)] for i in range(0,self.ndim)]))
+
+		#surplus nodes of element
+		elem_surp = list(itertools.product(*[elem_dic[str(i)] for i in range(0,self.ndim)]))
+		for k in elem_coarse:
+			if k in elem_surp:
+				elem_surp.remove(k)
+
+		########
+		#Need to update function for elements with different dimension sizes
+		########
+
+		#elem_coarse = np.array(elem_coarse)
+		#elem_surp = np.array(elem_surp)
+
+		node_list = [elem_coarse,elem_surp]
+
+		return node_list
+	
+	def elem_nodes(self,ind0,ind):
+		mg1 = MGARD(self.grid, self.u, self.order)
+		res_mg1 = mg1.elem_min_nodes(ind0)
+		surp_nodes = np.array([])
+		coarse_nodes = np.array([])
+		for elem in res_mg1:
+			surplus, coarse = mg1.elem_surp(ind0,ind,elem)
+			surp_nodes = np.append(surp_nodes,surplus)
+			coarse_nodes = np.append(coarse_nodes,coarse)
+		surp_nodes = surp_nodes.T.reshape(-1,self.ndim)
+		coarse_nodes = coarse_nodes.T.reshape(-1,self.ndim)
+
+		return surp_nodes,coarse_nodes
+
+
+u = np.cos(np.arange(N)/N*2*np.pi)
+for d in range(1,dim):
+	v = np.cos(np.arange(N)/N*2*np.pi)
+	u = u[...,np.newaxis] * v.reshape([1]*(d-1)+[len(v)])
+	
+u1 = np.zeros_like(u)
+u1[np.ix_(*ind)] = u[np.ix_(*ind)]
+		
+
+mg1 = MGARD(grid, u, order=(1,1,1))
+min_nodes = mg1.elem_min_nodes(ind0)
+
+p = min_nodes[0]
+
+node_list = mg1.elem_surp(ind0,ind,p)
+print(node_list)
+
+surplus_nodes,coarse_nodes = mg1.elem_nodes(ind0,ind)
+#print(surplus_nodes)
