@@ -3,8 +3,131 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def Gramm_matrix(grid, order=1):
-	''' Gramm matrix for piecewise polynomial of given order on a given grid '''
+# def Gramm_matrix(grid, order=1):
+# 	''' Gramm matrix for piecewise polynomial of given order on a given grid '''
+
+# 	dgrid = np.diff(grid)
+# 	if order==1:
+# 		main_diag = np.concatenate((dgrid[0:1]/3,(dgrid[:-1]+dgrid[1:])/3,dgrid[-1:]/3))
+# 		return np.diag(dgrid/6,-1) + np.diag(main_diag) + np.diag(dgrid/6,1)
+# 	elif order==2:
+# 		dx = dgrid[0]
+# 		N = grid.size
+# 		main_diag = 8/15*dx*np.ones((N,))
+# 		main_diag[1::2] *= 2
+# 		main_diag[0] /= 2
+# 		main_diag[-1] /= 2
+# 		sup_diag = 2/15*dx*np.ones((N-1,))
+# 		supsup_diag = np.zeros((N-2,))
+# 		supsup_diag[1::2] -= dx/15
+# 		return np.diag(supsup_diag,-2) + np.diag(sup_diag,-1) + np.diag(main_diag) + np.diag(sup_diag,1) + np.diag(supsup_diag,2)
+
+
+
+
+
+def element_Gramm_matrix(points: np.ndarray, order: int) -> np.ndarray:
+	'''1d element fine-to-coarse Gramm matrix for piecewise polynomials of given order
+
+		Inputs
+		------
+		  points: points on the fine element
+		  order:  order of the polynomial basis
+	'''
+
+	# number of points in fine element
+	Npf = len(points)
+
+	if order==0:
+		if Npf!=3:
+			raise ValueError("Mismatch between the number of nodes and the order of the element")
+	elif Npf!=(2*order+1):
+		raise ValueError("Mismatch between the number of nodes and the order of the element")
+
+	# fine and coarse mesh sizes
+	hf = np.diff(points)
+	hc = np.diff(points[::2])
+
+	if order==0:
+		Ge = np.array([[hc[0], hf[1]]])
+	else:
+		Ge = np.zeros((order+1,2*order+1))
+		if order==1:
+			hc0, = hc
+			hf0, hf1 = hf
+			#
+			Ge[0,0] = hc0/3.
+			Ge[0,1] = (hc0+hf1)/6.
+			Ge[0,2] = hc0/6.
+			#
+			Ge[1,0] = hc0/6.
+			Ge[1,1] = (hc0+hf0)/6.
+			Ge[1,2] = hc0/3.
+		elif order==2:
+			hc0, hc2 = hc
+			hf0, hf1, hf2, hf3 = hf
+			#
+			Ge[0,0] = (hc0+hc2)*(6*hc0**2-3*hc0*hc2+hc2**2)/(30*hc0**2)
+			Ge[0,1] = hc0**3*(3*hc0+5*hc2)/(60*(hc0+hc2)*hf0*hf1)
+			Ge[0,2] = (hc0+hc2)**3*(2*hc2-3*hc0)/(60*hc0**2*hc2)
+			Ge[0,3] = -hc2**5/(30*hc0*(hc0+hc2)*hf2*hf3)
+			Ge[0,4] = -(hc0+hc2)*(3*hc0**2-4*hc0*hc2+3*hc2**2)/(60*hc0*hc2)
+			#
+			Ge[1,0] = Ge[0,2]
+			Ge[1,1] = hc0**3*(2*hc0+5*hc2)/(60*hc2*hf0*hf1)
+			Ge[1,2] = (hc0+hc2)**5/(30*hc0**2*hc2**2)
+			Ge[1,3] = hc2**3*(5*hc0+2*hc2)/(60*hc0*hf2*hf3)
+			Ge[1,4] = (hc0+hc2)**3*(2*hc0-3*hc2)/(60*hc0*hc2**2)
+			#
+			Ge[2,0] = Ge[0,4]
+			Ge[2,1] = -hc0**5/(30*(hc0+hc2)*hc2*hf0*hf1)
+			Ge[2,2] = Ge[0,4]
+			Ge[2,3] = hc2**3*(5*hc0+3*hc2)/(60*(hc0+hc2)*hf2*hf3)
+			Ge[2,4] = (hc0+hc2)*(hc0**2-3*hc0*hc2+6*hc2**2)/(30*hc2**2)
+		# else:
+			# x = np.linspace(0,1,Npf+1)
+			# y = [lagrange(x,r)(x[i]) for i,r in enumerate(np.eye(Npf+1))]
+			# print(y)
+			# exit()
+			# # for i_c in range(order+1):
+			# # 	for i_f in range(2*order+1):
+			# # 		lagrange(points[])
+			# # 		Ge[i_c,i_f] =
+	return Ge
+
+
+def Gramm_matrix(grid: np.ndarray, order: int = 1) -> np.ndarray:
+	'''1d fine-to-coarse Gramm matrix for piecewise polynomial of given order on a given grid
+
+		Inputs
+		------
+		  grid:  1-d grid points on the fine grid
+		  order: order of the polynomial basis
+	'''
+
+	# number of fine grid points
+	Ngf = len(grid)
+
+	if order==0:
+		if (Ngf-1)%2!=0:
+			raise ValueError("Mismatch between the number of nodes in a grid and the order of the element")
+
+		# number of coarse elements
+		Nec = (Ngf-1)//2
+
+		# fine-to-coarse Gramm matrix
+		Gcf = np.zeros((Nec,2*Nec))
+
+		# loop through coarse elements
+		for ec in range(Nec):
+			Ge = element_Gramm_matrix(grid[2*ec:2*ec+3], order)
+			Gcf[ec:ec+1,2*ec:2*ec+2] += Ge
+	else:
+		if (Ngf-1)%(2*order)!=0:
+			raise ValueError("Mismatch between the number of nodes in a grid and the order of the element")
+
+		# number of coarse elements
+		Nec = (Ngf-1)//(2*order)
 
 	dgrid = np.diff(grid)
 	if order==1:
