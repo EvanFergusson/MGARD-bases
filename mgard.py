@@ -1,4 +1,7 @@
+from typing import Sequence
+
 import numpy as np
+from itertools import product
 
 import matplotlib.pyplot as plt
 
@@ -81,9 +84,12 @@ def element_Gramm_matrix(points: np.ndarray, order: int) -> np.ndarray:
 			#
 			Ge[2,0] = Ge[0,4]
 			Ge[2,1] = -hc0**5/(30*(hc0+hc2)*hc2*hf0*hf1)
-			Ge[2,2] = Ge[0,4]
+			Ge[2,2] = Ge[1,4]
 			Ge[2,3] = hc2**3*(5*hc0+3*hc2)/(60*(hc0+hc2)*hf2*hf3)
 			Ge[2,4] = (hc0+hc2)*(hc0**2-3*hc0*hc2+6*hc2**2)/(30*hc2**2)
+			# print(Ge[1,4],Ge[2,0],Ge[0,4])
+			# print(Ge)
+			# exit()
 		# else:
 			# x = np.linspace(0,1,Npf+1)
 			# y = [lagrange(x,r)(x[i]) for i,r in enumerate(np.eye(Npf+1))]
@@ -116,12 +122,13 @@ def Gramm_matrix(grid: np.ndarray, order: int = 1) -> np.ndarray:
 		Nec = (Ngf-1)//2
 
 		# fine-to-coarse Gramm matrix
-		Gcf = np.zeros((Nec,2*Nec))
+		Gcf = np.zeros((Nec+1,2*Nec+1))
 
 		# loop through coarse elements
 		for ec in range(Nec):
 			Ge = element_Gramm_matrix(grid[2*ec:2*ec+3], order)
 			Gcf[ec:ec+1,2*ec:2*ec+2] += Ge
+		Gcf[-1,-1] = 1.0
 	else:
 		if (Ngf-1)%(2*order)!=0:
 			raise ValueError("Mismatch between the number of nodes in a grid and the order of the element")
@@ -129,81 +136,274 @@ def Gramm_matrix(grid: np.ndarray, order: int = 1) -> np.ndarray:
 		# number of coarse elements
 		Nec = (Ngf-1)//(2*order)
 
-	dgrid = np.diff(grid)
-	if order==1:
-		main_diag = np.concatenate((dgrid[0:1]/3,(dgrid[:-1]+dgrid[1:])/3,dgrid[-1:]/3))
-		return np.diag(dgrid/6,-1) + np.diag(main_diag) + np.diag(dgrid/6,1)
-	elif order==2:
-		dx = dgrid[0]
-		N = grid.size
-		main_diag = 8/15*dx*np.ones((N,))
-		main_diag[1::2] *= 2
-		main_diag[0] /= 2
-		main_diag[-1] /= 2
-		sup_diag = 2/15*dx*np.ones((N-1,))
-		supsup_diag = np.zeros((N-2,))
-		supsup_diag[1::2] -= dx/15
-		return np.diag(supsup_diag,-2) + np.diag(sup_diag,-1) + np.diag(main_diag) + np.diag(sup_diag,1) + np.diag(supsup_diag,2)
+		# fine-to-coarse Gramm matrix
+		Gcf = np.zeros((Nec*order+1,2*Nec*order+1))
+
+		# loop through coarse elements
+		for ec in range(Nec):
+			# index of leftmost dof
+			ei = order*ec
+			Ge = element_Gramm_matrix(grid[2*ei:2*(ei+order)+1], order)
+			Gcf[ei:ei+order+1,2*ei:2*(ei+order)+1] += Ge
+
+	return Gcf
 
 
-def interpolation_matrix(grid, order):
-	'''Interpolation matrix for piecewise polynomial of given order on a given grid '''
-	pass
+###############################################################################
+###############################################################################
 
+
+# def interpolation_matrix(grid, order):
+# 	'''Interpolation matrix for piecewise polynomial of given order on a given grid '''
+# 	pass
+
+
+###############################################################################
+###############################################################################
 
 
 class MGARD(object):
-	def __init__(self, grid, u, order=1, interp='left'):
+	def __init__(self, grid: list[np.ndarray], u: np.ndarray, order: int = 1, order2 = None): #, interp='left'):
 		self.grid   = grid
-		self.u      = u
+		self.u      = u.copy()
 		self.u_mg   = u.copy()
 		self.order  = order
-		self.interp = interp
+		if order2 is None:
+			self.order2 = order
+		else:
+			self.order2 = order2
+		# self.interp = interp
 
 		self.ndim = u.ndim
 
-		if interp!='left':
-			raise ValueError("Avoid mid iterpolation at the moment")
+		# if interp!='left':
+		# 	raise ValueError("Avoid mid iterpolation at the moment")
 
 
-	def interpolate_nd(self, ind, ind0, dind):
+	def split_element(self, indf: Sequence[np.ndarray]):
+		'''Iterator over elements that splits each element into coarse and surplus indices
+
+		Inputs
+		------
+		  indf: indices of the fine nodes in each dimension
+
+		Outputs
+		-------
+		  i_c: indices of the coarse nodes inside element
+		  i_s: indices of the surplus nodes inside element
+		'''
+		for ei in product(*[ind_d[:-1:2*order_d] for ind_d,order_d in zip(indf,self.order)]):
+			i_c = []
+			i_s = []
+			for el_i in product(*[ind_d[eid_d:eid_d+2*order_d+1] for ind_d,eid_d,order_d in zip(indf,ei,self.order) ]):
+				if sum([el_i[d]%(2*self.order[d]) for d in range(self.ndim)])==0:
+					i_c.append(el_i)
+				else:
+					i_s.append(el_i)
+			yield i_c, i_s
+
+
+	def interpolate_1d(self, grid, order, indc, dind, ind_f, ind_c):
 		'''Interpolate values from coarse grid to surplus grid in-place
 
 		Inputs
 		------
-		  ind:	indices of the fine    nodes in each dimension
-		  ind0:	indices of the coarse  nodes in each dimension
+		  grid:  1d grid nodes
+		  order: 1d order
+		  dind:	indices of the surplus nodes
+		  indc:	indices of the fine    nodes
+		  indc:	indices of the coarse  nodes
+		'''
+
+		if order==0:
+			# loop through the 1d coarse constant elements along the given dimension
+			for i in range(0,len(dind)):
+				ind0 = np.ix_(*(ind_f+[[indc[i+0]]]+ind_c))
+				indj = np.ix_(*(ind_f+[[dind[i+0]]]+ind_c))
+
+				# interpolant
+				self.u[indj] = self.u[ind0]
+
+		elif order==1:
+			# loop through the 1d coarse linear elements along the given dimension
+			for i in range(0,len(dind),order):
+				# coarse mesh step
+				h = (grid[indc[i+1]] - grid[indc[i]])
+
+				# 1d Lagrange basis functions
+				l0 = -(grid[dind[i]] - grid[indc[i+1]]) / h
+				l1 =  (grid[dind[i]] - grid[indc[i+0]]) / h
+
+				######################################################
+				#       this is the dimension to be interpolated
+				#                     |     ||    |
+				#                     |     \/    |
+				ind0 = np.ix_(*(ind_f+[[indc[i+0]]]+ind_c))
+				ind1 = np.ix_(*(ind_f+[[indc[i+1]]]+ind_c))
+				indj = np.ix_(*(ind_f+[[dind[i+0]]]+ind_c))
+
+				# interpolant
+				self.u[indj] = self.u[ind0]*l0 + self.u[ind1]*l1
+
+		elif order==2:
+			# loop through 1d coarse quadratic elements along the given dimension
+			for i in range(0,len(dind),order):
+				# mesh steps
+				h01 = (grid[indc[i+0]] - grid[indc[i+1]])
+				h02 = (grid[indc[i+0]] - grid[indc[i+2]])
+				#
+				h12 = (grid[indc[i+1]] - grid[indc[i+2]])
+
+				ind0 = np.ix_(*(ind_f+[[indc[i+0]]]+ind_c))
+				ind1 = np.ix_(*(ind_f+[[indc[i+1]]]+ind_c))
+				ind2 = np.ix_(*(ind_f+[[indc[i+2]]]+ind_c))
+
+				# one point per interval of the element
+				for j in range(order):
+					# Lagrange basis functions
+					l0 =  (grid[dind[i+j]] - grid[indc[i+1]]) * (grid[dind[i+j]] - grid[indc[i+2]]) / (h01 * h02)
+					l1 = -(grid[dind[i+j]] - grid[indc[i+0]]) * (grid[dind[i+j]] - grid[indc[i+2]]) / (h01 * h12)
+					l2 =  (grid[dind[i+j]] - grid[indc[i+0]]) * (grid[dind[i+j]] - grid[indc[i+1]]) / (h02 * h12)
+
+					indj = np.ix_(*(ind_f+[[dind[i+j]]]+ind_c))
+
+					# interpolant
+					self.u[indj] = self.u[ind0]*l0 + self.u[ind1]*l1 + self.u[ind2]*l2
+		return self.u
+
+
+	def project_1d(self, grid, order, ind0, dind, ind_f, ind_c):
+		'''Project function on a surplus grid to coarse grid
+
+		Inputs
+		------
+		  ind0:	indices of the coarse  nodes
+		  dind:	indices of the surplus nodes
+		  ud:	values at the surplus nodes
+		'''
+		f = np.zeros(len(ind0))
+
+		G = Gramm_matrix(grid[ind0], order)
+
+
+		d0 = np.diff(grid[ind0])
+		d1 = grid[ind0[1:]] - grid[dind]
+		d2 = grid[dind]     - grid[ind0[:-1]]
+
+		# contribution from dof to the left
+		al = (2*d0 - d1) / 6
+		# contribution from dof to the right
+		ar = (2*d0 - d2) / 6
+
+
+		# ind1 = np.ix_(*(ind_f+[[ind0[i+0]]]+ind_c))
+		# ind2 = np.ix_(*(ind_f+[[ind0[i+1]]]+ind_c))
+		# ind3 = np.ix_(*(ind_f+[[dind[i+0]]]+ind_c))
+
+		ind4 = np.ix_(*(ind_f+[dind]+ind_c))
+
+		ud = self.u[ind4]
+
+		print(ud.shape)
+		print(len(ind0))
+
+		exit()
+
+		# forcing term
+		f[0]    =                     ar[0]  * ud[0]
+		f[1:-1] = al[:-1] * ud[:-1] + ar[1:] * ud[1:]
+		f[-1]   = al[-1]  * ud[-1]
+
+
+		self.u[ind4] = np.linalg.solve(G,f[ind4])
+
+		return np.linalg.solve(G,f)
+
+
+	def interpolate_nd(self, indf, indc, dind):
+		'''Interpolate values from coarse grid to surplus grid in-place
+
+		Inputs
+		------
+		  indf: indices of the fine    nodes in each dimension
+		  indc:	indices of the coarse  nodes in each dimension
 		  dind:	indices of the surplus nodes in each dimension
 		'''
 
 		# loop through dimensions
 		for d in range(self.ndim):
 			# coarse and surplus indices along the given dimension
-			ind0_d = ind0[d]
+			indc_d = indc[d]
 			dind_d = dind[d]
 
 			# 1d grid along the given dimension
 			grid_d = self.grid[d]
 
-			# loop through the 1d-elements along the given dimension
-			for i in range(0,len(dind_d),self.order[d]):
-				# mesh step
-				h = (grid_d[ind0_d[i+1]] - grid_d[ind0_d[i]])
+			# order along the given dimension
+			order_d = self.order[d]
 
-				# 1d Lagrange basis functions
-				l0 = -(grid_d[dind_d[i]] - grid_d[ind0_d[i+1]]) / h
-				l1 =  (grid_d[dind_d[i]] - grid_d[ind0_d[i+0]]) / h
+			# fine and coarse grid indices
+			ind_f = [i0 for i0 in indf[:d]]
+			ind_c = [i0 for i0 in indc[d+1:]]
 
-				i_f = [i0 for i0 in ind[:d]]
-				i_c = [i0 for i0 in ind0[d+1:]]
-
-				ind1 = np.ix_(*(i_f+[[ind0_d[i+0]]]+i_c))
-				ind2 = np.ix_(*(i_f+[[ind0_d[i+1]]]+i_c))
-				ind3 = np.ix_(*(i_f+[[dind_d[i+0]]]+i_c))
-
-				# interpolant
-				self.u[ind3] = self.u[ind1]*l0 + self.u[ind2]*l1
+			self.interpolate_1d(grid_d, order_d, indc_d, dind_d, ind_f, ind_c)
 		return self.u
+
+
+	def assemble_rhs(self, indc, indf):
+		f = np.zeros([len(i) for i in indc])
+		for ci, si in self.split_element(indf):
+			print(ci,si)
+
+
+	# def inter_level_products(self, indc, indf):
+	# 	'''Compute 1-d inner products between coarse and surplus basis functions
+	# 	'''
+	# 	for d in range(self.ndim):
+
+
+	def project_nd(self, indf, indc, dind):
+		'''Project function defined on a surplus grid to coarse grid
+
+		Inputs
+		------
+		  indf: indices of the fine    nodes in each dimension
+		  indc:	indices of the coarse  nodes in each dimension
+		  dind:	indices of the surplus nodes in each dimension
+		'''
+
+		u = self.u[np.ix_(*indf)].copy()
+
+		# loop through dimensions
+		for d in range(self.ndim):
+			# coarse and surplus indices along the given dimension
+			indc_d = indc[d]
+			indf_d = indf[d]
+			dind_d = dind[d]
+
+			# 1d grid along the given dimension
+			grid_d = self.grid[d]
+
+			# order along the given dimension
+			order_d = self.order[d]
+
+			# fine and coarse grid indices
+			ind_f = [i0 for i0 in indf[:d]]
+			ind_c = [i0 for i0 in indc[d+1:]]
+
+			G = Gramm_matrix(grid_d[indf_d], order_d)
+			M = np.linalg.solve(G[:,::2],G[:,:])
+
+			# # plt.spy(np.kron(G[:,::2],G[:,::2]), marker='.', markersize=5)
+			# plt.spy(G[:,::2], marker='.', markersize=5)
+			# plt.savefig('sparsity_2.png', dpi=100, bbox_inches='tight')
+			# plt.show()
+			# exit()
+
+			u = np.apply_along_axis(lambda x:M@x, d, u)
+		return u
+
+
 
 
 
@@ -421,7 +621,141 @@ class MGARD(object):
 	# 	return u
 
 
-	def decompose(self, ind0, dind):
+	def decompose(self, indf, indc, dind):
+		'''Compute approximation and detail coefficients at the given level
+
+		Inputs
+		------
+		  ind0:	indices of the coarse  nodes
+		  dind:	indices of the surplus nodes
+		'''
+		ind_f = np.ix_(*indf)
+		ind_c = np.ix_(*indc)
+
+		self.u[ind_c] = self.u_mg[ind_c]
+		self.interpolate_nd(indf, indc, dind)
+
+		# detail coefficients
+		self.u[ind_c] = 0
+		self.u_mg[ind_f] -= self.u[ind_f]
+
+		# approximation coefficients
+		self.u[ind_f] = self.u_mg[ind_f]
+		self.u_mg[ind_c] = self.project_nd(indf, indc, dind)
+
+		return self.u_mg[ind_f]
+
+
+	def decompose_full(self):
+		self.decompose_grid()
+
+		order = self.order.copy()
+		for l in range(len(self.grids[0])):
+			indf = [self.grids[d][l][0] for d in range(self.ndim)]
+			indc = [self.grids[d][l][1] for d in range(self.ndim)]
+			dind = [self.grids[d][l][2] for d in range(self.ndim)]
+			if l<=100:
+				self.order = self.order2 #[2 for _ in self.order]
+			else:
+				self.order = order
+			# print(self.order,l)
+			# # print(indf)
+			# print(indc)
+			# print(dind)
+			# exit()
+			self.decompose(indf, indc, dind)
+			self.order = order
+		return self.u_mg
+
+
+	def decompose_grid(self):
+		'''Decompose original grid into sequence of coarse and surplus grids
+		'''
+
+		# self.indf = []
+		# self.indc = []
+		# self.dind = []
+		# for d in range(self.ndim):
+		# 	indf_d = np.arange(self.grid[d].size)
+		# 	indc_d = indf_d
+		# 	min_grid = 3 if self.order==2 else 2
+		# 	while len(indc_d)>min_grid:
+		# 		dind_d = indc_d[1::2]
+		# 		indc_d = indc_d[0::2]
+		# 		self.dind.append(dind_d)
+		# 		self.indc.append(indc_d)
+		# 		self.indf.append(indf_d)
+		# return self.indf, self.indc, self.dind
+
+		self.grids = [[] for d in range(self.ndim)]
+		for d in range(self.ndim):
+			indf = np.arange(self.grid[d].size)
+			indc = indf.copy()
+			min_grid = 3 if (self.order2[d]==2 or self.order[d]==2) else 2
+			# min_grid = 2
+			while len(indc)>min_grid:
+				dind = indc[1::2]
+				indc = indc[0::2]
+				self.grids[d].append([indf,indc,dind])
+				indf = indc
+
+
+
+	def recompose(self, indf, indc, dind):
+		'''Recompose data from approximation and detail coefficients at the given level
+
+		Inputs
+		------
+		  ind0:	indices of the coarse  nodes
+		  dind:	indices of the surplus nodes
+		'''
+		ind_f = np.ix_(*indf)
+		ind_c = np.ix_(*indc)
+
+		self.u[ind_f] = self.u_mg[ind_f]
+
+		# approximation coefficients
+		self.u_mg[ind_c] -= -self.u[ind_c] + self.project_nd(indf, indc, dind)
+
+		self.u[ind_c] = self.u_mg[ind_c]
+		self.interpolate_nd(indf, indc, dind)
+		self.u[ind_c] = 0
+		self.u_mg[ind_f] += self.u[ind_f]
+
+		# self.u[ind_f] = self.u_mg[ind_f]
+
+		# # detail coefficients
+		# self.u_mg[ind_f] -= self.u[ind_f]
+		# self.u[ind_c] = 0
+		# self.interpolate_nd(indf, indc, dind)
+
+		# # approximation coefficients
+		# self.u_mg[ind0] -= self.project(ind0, dind, self.u_mg[dind])
+
+		# # detail coefficients
+		# self.u_mg[dind] += self.interpolate(ind0, dind, self.u_mg[ind0])
+		return self.u_mg
+
+
+	def recompose_full(self):
+		order = self.order.copy()
+		for l in range(len(self.grids[0])-1,-1,-1):
+			if l<=100:
+				self.order = self.order2 #[2 for _ in self.order]
+			else:
+				self.order = order
+			indf = [self.grids[d][l][0] for d in range(self.ndim)]
+			indc = [self.grids[d][l][1] for d in range(self.ndim)]
+			dind = [self.grids[d][l][2] for d in range(self.ndim)]
+			self.recompose(indf, indc, dind)
+			self.order = order
+		# for ind0,dind in self.grids[len(self.grids)::-1]:
+		# 	self.recompose(ind0,dind)
+		return self.u_mg
+
+
+
+	def decompose_old(self, ind0, dind):
 		'''Compute approximation and detail coefficients at the given level
 
 		Inputs
@@ -437,7 +771,7 @@ class MGARD(object):
 		return self.u_mg[ind0], self.u_mg[dind]
 
 
-	def recompose(self, ind0, dind):
+	def recompose_old(self, ind0, dind):
 		'''Recompose data from approximation and detail coefficients at the given level
 
 		Inputs
@@ -453,7 +787,7 @@ class MGARD(object):
 		return self.u_mg
 
 
-	def decompose_grid(self):
+	def decompose_grid_old(self):
 		'''Decompose original grid into sequence of coarse and surplus grids
 		'''
 		self.grids = []
@@ -466,7 +800,7 @@ class MGARD(object):
 		return self.grids
 
 
-	def decompose_full(self):
+	def decompose_full_old(self):
 		self.decompose_grid()
 
 		u0 = self.u
@@ -475,7 +809,7 @@ class MGARD(object):
 		return self.u_mg
 
 
-	def recompose_full(self):
+	def recompose_full_old(self):
 		for ind0,dind in self.grids[len(self.grids)::-1]:
 			self.recompose(ind0,dind)
 		return self.u_mg
@@ -637,6 +971,9 @@ class MGARD(object):
 
 
 
+
+###############################################################################
+###############################################################################
 
 
 
